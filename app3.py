@@ -15,6 +15,10 @@ from io import StringIO
 # Importa a classe Groq para interagir com a API da Groq.
 from groq import Groq
 
+# Inicializar o estado do modelo LLM se não estiver definido
+if "llm_model" not in st.session_state:
+    st.session_state.llm_model = "groq" # Modelo padrão
+
 # Configuração da página do Streamlit.
 st.set_page_config(
     page_title="Chatbot Planilha", # Define o título que aparece na aba do navegador.
@@ -26,6 +30,19 @@ st.set_page_config(
 st.title("📊 Chatbot da Planilha")
 # Subtítulo/descrição abaixo do título.
 st.markdown("Faça perguntas sobre os dados da planilha e receba respostas inteligentes!")
+
+# Adicionar o selectbox para seleção do modelo LLM
+selected_llm_model = st.selectbox(
+    "Escolha o Modelo de LLM:",
+    ("groq", "openai"),
+    index=("groq", "openai").index(st.session_state.llm_model),
+    help="Selecione o modelo de Linguagem Grande (LLM) para as respostas."
+)
+# Atualizar o estado da sessão com a escolha do usuário
+if selected_llm_model != st.session_state.llm_model:
+    st.session_state.llm_model = selected_llm_model
+    st.info(f"Modelo alterado para: **{st.session_state.llm_model.upper()}**")
+    st.rerun() # Reruns para aplicar a mudança do modelo imediatamente.
 
 # Função para carregar dados dos arquivos CSV locais.
 # O decorador `@st.cache_data` faz com que o Streamlit "cacheie" o resultado desta função.
@@ -93,23 +110,26 @@ def query_ai(question, header_df, items_df):
     """Processa a pergunta do usuário, realiza análises de dados e consulta a IA para obter uma resposta."""
     try:
         # Carregar a chave da API dos segredos do Streamlit
-        openai_api_key = st.secrets["openai"]["api_key"] # A chave da API do OpenAI é carregada aqui dos segredos do Streamlit.
-        client = OpenAI(api_key=openai_api_key) # O cliente OpenAI é inicializado com a chave da API.
+        # openai_api_key = st.secrets["openai"]["api_key"] # A chave da API do OpenAI é carregada aqui dos segredos do Streamlit.
+        # client = OpenAI(api_key=openai_api_key) # O cliente OpenAI é inicializado com a chave da API.
 
         # Define qual modelo de LLM será utilizado (pode ser 'groq' ou 'openai')
-        modelo_llm = "groq" # Ou "openai"
+        modelo_llm = st.session_state.llm_model # Usar o modelo selecionado no selectbox
 
         # Configurações específicas para cada modelo
         api_key = ""
         model_name = ""
+        model_prefix = "" # Novo: prefixo para a resposta
         if modelo_llm == "groq":
             api_key = st.secrets["groq"]["api_key"]
             client = Groq(api_key=api_key)
             model_name = "llama3-8b-8192" # Exemplo de modelo da Groq
+            model_prefix = "Groq diz: "
         elif modelo_llm == "openai":
             api_key = st.secrets["openai"]["api_key"]
             client = OpenAI(api_key=api_key)
             model_name = "gpt-4o" # Exemplo de modelo da OpenAI
+            model_prefix = "OpenAI diz: "
         else:
             st.error("Modelo de LLM inválido. Por favor, escolha 'groq' ou 'openai'.")
             return "Erro: Configuração de modelo inválida."
@@ -273,7 +293,7 @@ def query_ai(question, header_df, items_df):
             max_tokens=1000
         )
 
-        return response.choices[0].message.content # Retorna o conteúdo da resposta da IA.
+        return model_prefix + response.choices[0].message.content # Retorna o conteúdo da resposta da IA com o prefixo.
     except Exception as e:
         # Captura e retorna qualquer erro que ocorra durante a consulta à IA.
         return f"Erro ao consultar a IA: {e}"
@@ -304,26 +324,51 @@ if header_df is not None and items_df is not None:
         st.session_state.messages = []
 
     # Mostrar histórico do chat
-    for message in st.session_state.messages:
+    for i, message in enumerate(st.session_state.messages):
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])     # Renderiza o conteúdo da mensagem como Markdown.
+            # Use um container para o conteúdo e o botão de recarregar
+            col1, col2 = st.columns([0.9, 0.1])
+            with col1:
+                st.markdown(message["content"])
+
+            # Adicionar botão de recarregar apenas para mensagens do usuário
+            if message["role"] == "user":
+                with col2:
+                    if st.button("🔄", key=f"reload_btn_{i}", help="Refazer esta pergunta"):
+                        st.session_state.re_ask_prompt = message["original_prompt"]
+                        st.rerun()
 
     # Input do usuário para digitar a pergunta.
     # `st.chat_input` fornece uma caixa de texto na parte inferior da interface de chat.
     if prompt := st.chat_input("Faça uma pergunta sobre as notas fiscais..."):
         # Adiciona a mensagem do usuário ao histórico do chat.
-        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.session_state.messages.append({"role": "user", "content": prompt, "original_prompt": prompt}) # Armazena o prompt original
         with st.chat_message("user"):
             st.markdown(prompt) # Exibe a pergunta do usuário na interface.
 
         # Obter resposta da IA.
         with st.chat_message("assistant"):
-            with st.spinner("Analisando os dados..."): # Exibe um spinner enquanto a IA processa.
+            with st.spinner("Analisando os dados..."):
                 # Chama a função `query_ai` para obter a resposta da LLM.
                 response = query_ai(prompt, header_df, items_df)
                 st.markdown(response) # Exibe a resposta da IA na interface.
 
         # Adiciona a resposta da IA ao histórico do chat.
+        st.session_state.messages.append({"role": "assistant", "content": response})
+
+    # Lógica para refazer uma pergunta se o botão de recarregar foi clicado
+    if "re_ask_prompt" in st.session_state and st.session_state.re_ask_prompt:
+        prompt_to_re_ask = st.session_state.re_ask_prompt
+        st.session_state.re_ask_prompt = None # Limpa a flag
+
+        st.session_state.messages.append({"role": "user", "content": prompt_to_re_ask, "original_prompt": prompt_to_re_ask})
+        with st.chat_message("user"):
+            st.markdown(prompt_to_re_ask)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Analisando os dados (refazendo pergunta)..."):
+                response = query_ai(prompt_to_re_ask, header_df, items_df)
+                st.markdown(response)
         st.session_state.messages.append({"role": "assistant", "content": response})
 
     # Botão na barra lateral para limpar o histórico do chat.
@@ -338,7 +383,8 @@ if header_df is not None and items_df is not None:
         "Qual o valor total dos itens da nota fiscal com CHAVE DE ACESSO X?", # Substituir X por uma chave real nos exemplos
         "Liste os itens da nota fiscal com CHAVE DE ACESSO Y", # Substituir Y por uma chave real
         "Qual a quantidade total de um determinado produto (descreva o produto)?",
-        "Qual nota fiscal tem mais itens?"
+        "Qual nota fiscal tem mais itens?",
+        "Me mostre os 10 maiores fornecedores por valor de nota fiscal."
     ]
 
     # Adicionar um aviso sobre os exemplos de perguntas.
