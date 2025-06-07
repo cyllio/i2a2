@@ -12,6 +12,8 @@ import json
 import os
 # Importa StringIO para tratar strings como arquivos, útil para ler CSVs em memória.
 from io import StringIO
+# Importa a classe Groq para interagir com a API da Groq.
+from groq import Groq
 
 # Configuração da página do Streamlit.
 st.set_page_config(
@@ -93,6 +95,24 @@ def query_ai(question, header_df, items_df):
         # Carregar a chave da API dos segredos do Streamlit
         openai_api_key = st.secrets["openai"]["api_key"] # A chave da API do OpenAI é carregada aqui dos segredos do Streamlit.
         client = OpenAI(api_key=openai_api_key) # O cliente OpenAI é inicializado com a chave da API.
+
+        # Define qual modelo de LLM será utilizado (pode ser 'groq' ou 'openai')
+        modelo_llm = "groq" # Ou "openai"
+
+        # Configurações específicas para cada modelo
+        api_key = ""
+        model_name = ""
+        if modelo_llm == "groq":
+            api_key = st.secrets["groq"]["api_key"]
+            client = Groq(api_key=api_key)
+            model_name = "llama3-8b-8192" # Exemplo de modelo da Groq
+        elif modelo_llm == "openai":
+            api_key = st.secrets["openai"]["api_key"]
+            client = OpenAI(api_key=api_key)
+            model_name = "gpt-4o" # Exemplo de modelo da OpenAI
+        else:
+            st.error("Modelo de LLM inválido. Por favor, escolha 'groq' ou 'openai'.")
+            return "Erro: Configuração de modelo inválida."
 
         # Função auxiliar para tentar encontrar a coluna de fornecedor
         def find_supplier_column(df):
@@ -247,7 +267,7 @@ def query_ai(question, header_df, items_df):
         # Chama a API do OpenAI com o modelo "gpt-4o", a mensagem do usuário (que inclui o prompt construído)
         # Define a temperatura (criatividade da resposta) e o máximo de tokens.
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=model_name,
             messages=[{"role": "user", "content": prompt_to_groq}],
             temperature=0.1,
             max_tokens=1000
