@@ -118,13 +118,52 @@ def query_ai(question, header_df, items_df):
                         return col # Retorna o nome da coluna encontrada.
              return None # Retorna None se não encontrar uma coluna de chave de acesso adequada.
 
+        # Função auxiliar para tentar encontrar a coluna de valor total da nota fiscal
+        def find_value_column(df):
+            """Tenta identificar a coluna que contém o valor total das notas fiscais em um DataFrame."""
+            # Nomes de colunas comuns para valor total
+            possible_value_cols = ['valor total', 'valortotal', 'total nf', 'valornotafiscal', 'valor nota fiscal', 'valor', 'total']
+            for col in df.columns:
+                for possible_name in possible_value_cols:
+                    if possible_name in col.lower():
+                        return col
+            return None
 
         prompt_lower = question.lower() # Converte a pergunta do usuário para minúsculas para facilitar a comparação.
         formatted_result = None # Variável para armazenar resultados pré-calculados de análises específicas.
 
         # --- Lógica de detecção e cálculo para perguntas específicas ---
-        # Verifica se a pergunta do usuário solicita os 10 principais fornecedores.
-        if "10 nomes de fornecedores com mais notas fiscais" in prompt_lower or "top 10 fornecedores" in prompt_lower:
+        # Verifica se a pergunta do usuário solicita os 10 maiores fornecedores por valor de nota fiscal.
+        if "10 maiores fornecedores por valor de nota fiscal" in prompt_lower:
+            supplier_col = find_supplier_column(header_df)
+            value_col = find_value_column(header_df)
+
+            if supplier_col and value_col:
+                try:
+                    # Agrupa o DataFrame de cabeçalho pela coluna do fornecedor e soma o valor total das notas fiscais.
+                    fornecedores_valor = header_df.groupby(supplier_col)[value_col].sum()
+
+                    # Obtém os top 10 fornecedores com base no valor total, em ordem decrescente.
+                    top_10_fornecedores_valor = fornecedores_valor.sort_values(ascending=False).head(10)
+
+                    # DEBUG: Imprimir o resultado do cálculo antes de enviar para a IA
+                    print(f"DEBUG - Top 10 Fornecedores por Valor (antes do LLM):\n{top_10_fornecedores_valor}")
+
+                    formatted_result = "Os 10 maiores fornecedores por valor de Nota Fiscal são:\n\n"
+                    if not top_10_fornecedores_valor.empty:
+                        for fornecedor, valor in top_10_fornecedores_valor.items():
+                            formatted_result += f"- {fornecedor}: R$ {valor:,.2f}\n"
+                    else:
+                        formatted_result += "Não foram encontrados dados de fornecedores ou valores de notas fiscais para esta análise."
+
+                except Exception as e:
+                    formatted_result = f"Erro interno ao calcular os 10 maiores fornecedores por valor de nota fiscal: {e}"
+                    st.error(formatted_result)
+            else:
+                formatted_result = "Não foi possível identificar as colunas de fornecedor ou valor da nota fiscal nos dados para calcular o top 10 por valor."
+                st.warning(formatted_result)
+        # Verifica se a pergunta do usuário solicita os 10 principais fornecedores (por quantidade de notas).
+        elif "10 nomes de fornecedores com mais notas fiscais" in prompt_lower or "top 10 fornecedores" in prompt_lower:
             # Tenta encontrar as colunas de fornecedor e chave de acesso no DataFrame de cabeçalho.
             supplier_col = find_supplier_column(header_df)
             chave_acesso_col = find_chave_acesso_column(header_df)
@@ -161,7 +200,6 @@ def query_ai(question, header_df, items_df):
                  formatted_result = "Não foi possível identificar as colunas de fornecedor ou chave de acesso nos dados para calcular o top 10."
                  st.warning(formatted_result) # Exibe o warning no Streamlit.
         # --- Fim da lógica de detecção e cálculo ---
-
 
         # Função para criar um resumo estatístico dos dados (usada para perguntas gerais)
         def create_data_summary(df, name="Dados"): # Adicionado nome para identificar no prompt
