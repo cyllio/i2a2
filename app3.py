@@ -23,12 +23,12 @@ if "edited_prompt" not in st.session_state:
 
 # Configuração da página
 st.set_page_config(
-    page_title="Chatbot Planilha",
+    page_title="Agente Smart",
     page_icon="📊",
     layout="wide"
 )
 
-st.title("📊 Chatbot da Planilha")
+st.title("📊 Agente de Notas Fiscais Smart - Grupo Comunicação")
 st.markdown("Faça perguntas sobre os dados da planilha e receba respostas inteligentes!")
 
 # Seção de upload de arquivo ZIP
@@ -293,7 +293,7 @@ if header_df is not None and items_df is not None:
     # Exemplos de perguntas na sidebar
     st.sidebar.header("💡 Exemplos de Perguntas")
     example_questions = [
-        "Quantas notas fiscais temos?",
+        "Quantas notas fiscais temos na base?",
         "Qual o valor total dos itens da nota fiscal com CHAVE DE ACESSO X?",
         "Liste os itens da nota fiscal com CHAVE DE ACESSO Y",
         "Qual a quantidade total de um determinado produto (descreva o produto)?",
